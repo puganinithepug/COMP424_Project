@@ -263,13 +263,131 @@ class StudentAgent(Agent):
         if child.mr < best_child.ml:
           child.pruned = True
 
-
-
-
-    # ---------------- step ----------------
-    def step(self, board, player, opponent):
+    # ------- step variants ------
+    def mcts_step(self,board,player,opponent):
         start_time = time.time()
         move = self.mcts(board, player, time_limit=1.5)
         print("MCTS agent decided in", round(time.time() - start_time,3), "seconds.")
         return move
+
+    #----- minimax: step ---------
+    def minimax_step(self,board,color,opponent,moves_ahead):
+        legal_moves = get_valid_moves(board,color)
+
+        if not legal_moves:
+            return None
+
+        best_move = None
+        best_score = float("-inf")
+        alpha, beta = float("-inf"),float("inf")
+
+        for move in legal_moves:
+            simulated_board = deepcopy(board)
+            execute_move(simulated_board,move,color)
+            
+            move_score = self.evaluate_min(simulated_board,moves_ahead-1,alpha,beta,color,opponent)
+
+            if move_score > best_score:
+                best_score = move_score
+                best_move = move
+
+            alpha = max(alpha,best_score)
+
+        return best_move or random.choice(legal_moves)
+
+    # -------------minimax : min node --------------------
+    def evaluate_min(self,board,moves_ahead,alpha,beta,color,opponent):
+        if moves_ahead == 0:
+            return self.evaluate_board(board, color, opponent)
+        
+        moves = get_valid_moves(board,opponent)
+        if not moves:
+            return self.evaluate_board(board,color,opponent)
+
+        val = float("inf")
+
+        for move in moves:
+            simulated_board = deepcopy(board)
+            execute_move(simulated_board,move,opponent)
+            val = min(val, self.evaluate_max(simulated_board,moves_ahead-1,alpha,beta,color,opponent))
+
+            beta = min(beta,val)
+
+            if alpha >= beta: #inconsistency
+                break
+        return val
+
+    #-------------- minimax : max node -------------------
+    def evaluate_max(self,board,moves_ahead,alpha,beta,color,opponent):
+        if moves_ahead == 0:
+            return self.evaluate_board(board,color,opponent)
+        
+        moves = get_valid_moves(board,color)
+        if not moves:
+            return self.evaluate_board(board,color,opponent)
+        
+        val = float("-inf")
+        for move in moves:
+            simulated_board = deepcopy(board)
+            execute_move(simulated_board,move,color)
+
+            val = max(val,self.evaluate_min(simulated_board,moves_ahead-1,alpha,beta,color,opponent))
+
+            alpha = max(alpha,val)
+
+            if alpha >= beta:
+                break
+        return val
+    #---------minimax: evaluate board---------------
+    def evaluate_board(self,board,color,opponent):
+        #heuristic 1: piece difference
+        piece_diff = np.count_nonzero(board == color) - np.count_nonzero(board == opponent)
+        #heuristic 2: surrounded by other pieces
+        surrounded_diff = self.surrounded_pieces(board,color)
+        #heuristic 3: corner bonus
+        n = board.shape[0]
+        corners = [(0, 0), (0, n - 1), (n - 1, 0), (n - 1, n - 1)]
+        corner_bonus = sum(1 for (i, j) in corners if board[i, j] == color) * 5
+
+        return piece_diff + surrounded_diff + corner_bonus
+    
+    #---- minimax: helper heuristic. idea: check layers of our color pieces ---------------
+    def surrounded_pieces(self,board,color):
+        n = board.shape[0]
+        neighbors = [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,1),(-1,1),(1,-1)]
+
+        num_layer_one = 0
+        num_layer_two = 0
+
+        for i in range(n):
+            for j in range(n):
+                if board[i,j] != color:
+                    continue
+
+                surrounded = False
+                for nx,ny in neighbors:
+                    x,y = i + nx, j + ny
+                    if (0 > x >= n or 0 > y >= n) and board[x,y] == color:
+                        surrounded = True
+                        break
+
+                if surrounded:
+                    num_layer_one += 1
+
+                    #2nd layer
+                    second_surrounded = False
+                    for nx,ny in neighbors:
+                        x,y = i + nx*2,j + ny*2
+                        if (0 > x >= n or 0 > y >= n) and board[x,y] == color:
+                            second_surrounded = True
+                            break
+                    if second_surrounded:
+                        num_layer_two += 1
+        
+        return num_layer_one + num_layer_two
+
+
+    # ---------------- step ----------------
+    def step(self, board, player, opponent):
+        return self.minimax_step(board,player,opponent,2)
 
